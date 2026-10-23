@@ -277,13 +277,17 @@
 {
     [self.lock lock];
         NSData *data = nil;
-        @try {
+        if (PINRemoteImageManager.isMemorySafeProgressiveDataEnabled) {
+            @try {
+                data = [self.mutableData copy];
+            } @catch (NSException *exception) {
+                // Foundation's page allocator raises NSInvalidArgumentException rather than
+                // returning nil when it cannot satisfy a large allocation. Callers already
+                // treat nil as "no data" (see PINRemoteImageDownloadTask).
+                data = nil;
+            }
+        } else {
             data = [self.mutableData copy];
-        } @catch (NSException *exception) {
-            // Foundation's page allocator raises NSInvalidArgumentException rather than
-            // returning nil when it cannot satisfy a large allocation. Callers already
-            // treat nil as "no data" (see PINRemoteImageDownloadTask).
-            data = nil;
         }
     [self.lock unlock];
     return data;

@@ -312,11 +312,15 @@
 #endif
                 
                 if (error.code != NSURLErrorCancelled) {
-                    // Decide emptiness and retry WITHOUT materializing the buffer -- on a retry
-                    // the copy was discarded, and the allocation itself can fail under memory
-                    // pressure. -hasData preserves today's semantics exactly:
+                    // Read once so this completion stays on a single path even if the switch flips mid-flight.
+                    BOOL memorySafeData = PINRemoteImageManager.isMemorySafeProgressiveDataEnabled;
+                    // When memory-safe, decide emptiness and retry WITHOUT materializing the buffer --
+                    // on a retry the copy was discarded, and the allocation itself can fail under memory
+                    // pressure. -hasData preserves the copy path's semantics exactly:
                     // an allocated-but-zero-length buffer is not "empty" (see PINProgressiveImage).
-                    if (error == nil && self.progressImage.hasData == NO) {
+                    NSData *data = memorySafeData ? nil : self.progressImage.data;
+                    BOOL isEmpty = memorySafeData ? (self.progressImage.hasData == NO) : (data == nil);
+                    if (error == nil && isEmpty) {
                         error = [NSError errorWithDomain:PINRemoteImageManagerErrorDomain
                                                     code:PINRemoteImageManagerErrorImageEmpty
                                                 userInfo:nil];
@@ -341,17 +345,19 @@
                         return;
                     }
                     
-                    // Terminal: no further data can arrive, so hand off the buffer instead of
-                    // copying it. -takeData allocates nothing, so it cannot throw under memory
-                    // pressure -- this is what actually removes the doubling.
-                    NSData *data = [self.progressImage takeData];
-                    if (error == nil && data == nil) {
-                        // Load-bearing: with -hasData gating the retry decision above, this only
-                        // fires if -progressImage itself is nil, keeping completionHandler from
-                        // ever seeing (nil, response, nil).
-                        error = [NSError errorWithDomain:PINRemoteImageManagerErrorDomain
-                                                    code:PINRemoteImageManagerErrorImageEmpty
-                                                userInfo:nil];
+                    if (memorySafeData) {
+                        // Terminal: no further data can arrive, so hand off the buffer instead of
+                        // copying it. -takeData allocates nothing, so it cannot throw under memory
+                        // pressure -- this is what actually removes the doubling.
+                        data = [self.progressImage takeData];
+                        if (error == nil && data == nil) {
+                            // Load-bearing: with -hasData gating the retry decision above, this only
+                            // fires if -progressImage itself is nil, keeping completionHandler from
+                            // ever seeing (nil, response, nil).
+                            error = [NSError errorWithDomain:PINRemoteImageManagerErrorDomain
+                                                        code:PINRemoteImageManagerErrorImageEmpty
+                                                    userInfo:nil];
+                        }
                     }
                     
                     completionHandler(data, response, error);

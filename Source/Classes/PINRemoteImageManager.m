@@ -9,6 +9,7 @@
 #import <PINRemoteImage/PINRemoteImageManager.h>
 
 #import <CommonCrypto/CommonDigest.h>
+#import <stdatomic.h>
 
 #if !__has_include(<PINOperation/PINOperation.h>)
 #import "PINOperation.h"
@@ -168,6 +169,17 @@ typedef void (^PINRemoteImageManagerDataCompletion)(NSData *data, NSURLResponse 
 
 static PINRemoteImageManager *sharedImageManager = nil;
 static dispatch_once_t sharedDispatchToken;
+static atomic_bool memorySafeProgressiveDataEnabled = false;
+
++ (BOOL)isMemorySafeProgressiveDataEnabled
+{
+    return atomic_load(&memorySafeProgressiveDataEnabled);
+}
+
++ (void)setMemorySafeProgressiveDataEnabled:(BOOL)enabled
+{
+    atomic_store(&memorySafeProgressiveDataEnabled, enabled);
+}
 
 + (instancetype)sharedImageManager
 {

@@ -14,6 +14,7 @@
 #import <objc/runtime.h>
 
 #import <PINRemoteImage/PINProgressiveImage.h>
+#import <PINRemoteImage/PINRemoteImageManager.h>
 #import "PINProgressiveImage+Private.h"
 
 /// Dynamically subclasses `object`'s class so that `-copy`/`-copyWithZone:` throw,
@@ -45,9 +46,24 @@ static void PINTestMakeCopyThrowOnInstance(NSObject *object)
 
 @interface PINProgressiveImageTests : XCTestCase
 
+@property (nonatomic, assign) BOOL originalMemorySafeProgressiveDataEnabled;
+
 @end
 
 @implementation PINProgressiveImageTests
+
+- (void)setUp
+{
+    [super setUp];
+    self.originalMemorySafeProgressiveDataEnabled = PINRemoteImageManager.isMemorySafeProgressiveDataEnabled;
+    PINRemoteImageManager.memorySafeProgressiveDataEnabled = YES;
+}
+
+- (void)tearDown
+{
+    PINRemoteImageManager.memorySafeProgressiveDataEnabled = self.originalMemorySafeProgressiveDataEnabled;
+    [super tearDown];
+}
 
 - (PINProgressiveImage *)freshProgressiveImage
 {
@@ -157,6 +173,24 @@ static void PINTestMakeCopyThrowOnInstance(NSObject *object)
     // PINRemoteLockTests; this just confirms -data's own explicit lock/unlock pairs
     // correctly around the @try/@catch.)
     XCTAssertTrue(progressiveImage.hasData, @"hasData does not copy, so it must still reflect the buffer's presence even though -data failed.");
+}
+
+- (void)testDataStillThrowsWhenCopyFailsAndMemorySafeDataIsDisabled
+{
+    PINRemoteImageManager.memorySafeProgressiveDataEnabled = NO;
+
+    PINProgressiveImage *progressiveImage = [self freshProgressiveImage];
+    NSData *chunk = [@"payload" dataUsingEncoding:NSUTF8StringEncoding];
+    [progressiveImage updateProgressiveImageWithData:chunk expectedNumberOfBytes:(int64_t)chunk.length isResume:NO];
+
+    NSMutableData *mutableData = [progressiveImage valueForKey:@"mutableData"];
+    XCTAssertNotNil(mutableData);
+    PINTestMakeCopyThrowOnInstance(mutableData);
+
+    // The legacy path leaves -data's lock held after the throw, and -dealloc takes that lock,
+    // so the object is intentionally leaked to keep the test from deadlocking.
+    CFBridgingRetain(progressiveImage);
+    XCTAssertThrowsSpecificNamed(progressiveImage.data, NSException, NSInvalidArgumentException);
 }
 
 @end
